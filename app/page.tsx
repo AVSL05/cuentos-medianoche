@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 
 const CLOUD_NAME = 'dqknan2pq';
 const UPLOAD_PRESET = 'cuentos';
-const STORIES_KEY = 'stories_index.json';
+const JSONBIN_ID = '69e14de1856a682189409469';
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 
 interface Story {
   id: string;
@@ -34,35 +35,27 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' });
 }
 
-// Upload a JSON file to Cloudinary as a raw file
+// Save stories list to JSONBin
 async function saveStoriesToCloud(stories: Story[]) {
-  const json = JSON.stringify(stories);
-  const blob = new Blob([json], { type: 'application/json' });
-  const file = new File([blob], STORIES_KEY, { type: 'application/json' });
-
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('upload_preset', UPLOAD_PRESET);
-  formData.append('public_id', 'data/stories_index');
-  formData.append('resource_type', 'raw');
-  formData.append('overwrite', 'true');
-  formData.append('invalidate', 'true');
-
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`, {
-    method: 'POST',
-    body: formData,
-  });
-  return res.ok;
+  try {
+    const res = await fetch(JSONBIN_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stories }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
+// Load stories list from JSONBin
 async function loadStoriesFromCloud(): Promise<Story[]> {
   try {
-    // Add timestamp to bust cache
-    const url = `https://res.cloudinary.com/${CLOUD_NAME}/raw/upload/data/stories_index.json?t=${Date.now()}`;
-    const res = await fetch(url);
+    const res = await fetch(`${JSONBIN_URL}/latest`);
     if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    return Array.isArray(data.record?.stories) ? data.record.stories : [];
   } catch {
     return [];
   }
