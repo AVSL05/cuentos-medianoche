@@ -1,6 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
+
+const CLOUD_NAME = 'dqknan2pq';
+const UPLOAD_PRESET = 'cuentos';
 
 interface Story {
   id: string;
@@ -8,6 +11,7 @@ interface Story {
   duration?: number;
   uploadedAt: string;
   url: string;
+  publicId: string;
 }
 
 const STARS = Array.from({ length: 80 }, (_, i) => ({
@@ -29,12 +33,14 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' });
 }
 
+const STORAGE_KEY = 'cuentos_v2';
+
 export default function Home() {
   const [stories, setStories] = useState<Story[]>([]);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showUpload, setShowUpload] = useState(false);
@@ -43,20 +49,22 @@ export default function Home() {
   const [volume, setVolume] = useState(0.8);
   const [timer, setTimer] = useState<number | null>(null);
   const [timerLeft, setTimerLeft] = useState<number | null>(null);
-  const [sleepMode, setSleepMode] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load stories from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('stories');
+    const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) setStories(JSON.parse(stored));
+    // Show welcome on first visit
+    const seen = localStorage.getItem('welcome_seen');
+    if (!seen) { setShowWelcome(true); localStorage.setItem('welcome_seen', '1'); }
   }, []);
 
   const saveStories = (s: Story[]) => {
-    localStorage.setItem('stories', JSON.stringify(s));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
     setStories(s);
   };
 
@@ -64,10 +72,13 @@ export default function Home() {
   useEffect(() => {
     if (timerLeft === null) return;
     if (timerLeft <= 0) {
-      audioRef.current?.pause();
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
       setPlaying(null);
+      setIsPaused(false);
       setTimerLeft(null);
-      setSleepMode(false);
+      setTimer(null);
       return;
     }
     timerRef.current = setTimeout(() => setTimerLeft(t => (t ?? 0) - 1), 1000);
@@ -84,17 +95,22 @@ export default function Home() {
     audioRef.current = audio;
     audio.play();
     setPlaying(story.id);
+    setIsPaused(false);
     setCurrentTime(0);
-
     audio.addEventListener('timeupdate', () => setCurrentTime(audio.currentTime));
     audio.addEventListener('loadedmetadata', () => setDuration(audio.duration));
-    audio.addEventListener('ended', () => { setPlaying(null); setCurrentTime(0); });
+    audio.addEventListener('ended', () => { setPlaying(null); setIsPaused(false); setCurrentTime(0); });
   };
 
   const togglePlay = () => {
     if (!audioRef.current) return;
-    if (audioRef.current.paused) { audioRef.current.play(); setPlaying(p => p); }
-    else { audioRef.current.pause(); setPlaying(null); }
+    if (audioRef.current.paused) {
+      audioRef.current.play();
+      setIsPaused(false);
+    } else {
+      audioRef.current.pause();
+      setIsPaused(true);
+    }
   };
 
   const seek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,21 +129,19 @@ export default function Home() {
     if (timerRef.current) clearTimeout(timerRef.current);
     setTimer(minutes);
     setTimerLeft(minutes * 60);
-    setSleepMode(true);
   };
 
   const cancelTimer = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setTimerLeft(null);
     setTimer(null);
-    setSleepMode(false);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setSelectedFile(file);
-    setNewTitle(file.name.replace(/\.mp3$/i, ''));
+    setNewTitle(file.name.replace(/\.mp3$/i, '').replace(/[-_]/g, ' '));
   };
 
   const handleUpload = async () => {
@@ -135,38 +149,66 @@ export default function Home() {
     setUploading(true);
     setUploadProgress(0);
 
-    // Simulate progress while reading file
-    const interval = setInterval(() => {
-      setUploadProgress(p => Math.min(p + 10, 85));
-    }, 80);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('upload_preset', UPLOAD_PRESET);
+      formData.append('resource_type', 'video'); // Cloudinary uses "video" for audio
+      formData.append('folder', 'cuentos');
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      clearInterval(interval);
-      setUploadProgress(95);
-      const url = e.target?.result as string;
-      const audio = new Audio(url);
-      audio.addEventListener('loadedmetadata', () => {
-        const story: Story = {
-          id: Date.now().toString(),
-          title: newTitle || selectedFile.name,
-          duration: audio.duration,
-          uploadedAt: new Date().toISOString(),
-          url,
-        };
-        const updated = [story, ...stories];
-        saveStories(updated);
-        setUploadProgress(100);
-        setTimeout(() => {
-          setUploading(false);
-          setShowUpload(false);
-          setSelectedFile(null);
-          setNewTitle('');
-          setUploadProgress(0);
-        }, 600);
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          setUploadProgress(Math.round((e.loaded / e.total) * 90));
+        }
       });
-    };
-    reader.readAsDataURL(selectedFile);
+
+      const result = await new Promise<any>((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status === 200) resolve(JSON.parse(xhr.responseText));
+          else reject(new Error('Upload failed'));
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`);
+        xhr.send(formData);
+      });
+
+      setUploadProgress(100);
+
+      // Get duration from audio element
+      const audio = new Audio(result.secure_url);
+      const dur = await new Promise<number>((resolve) => {
+        audio.addEventListener('loadedmetadata', () => resolve(audio.duration));
+        audio.addEventListener('error', () => resolve(0));
+        setTimeout(() => resolve(0), 5000);
+      });
+
+      const story: Story = {
+        id: result.public_id,
+        title: newTitle || selectedFile.name,
+        duration: dur || result.duration,
+        uploadedAt: new Date().toISOString(),
+        url: result.secure_url,
+        publicId: result.public_id,
+      };
+
+      const updated = [story, ...stories];
+      saveStories(updated);
+
+      setTimeout(() => {
+        setUploading(false);
+        setShowUpload(false);
+        setSelectedFile(null);
+        setNewTitle('');
+        setUploadProgress(0);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }, 600);
+
+    } catch (err) {
+      console.error(err);
+      setUploading(false);
+      alert('Hubo un error al subir el archivo. Intenta de nuevo.');
+    }
   };
 
   const deleteStory = (id: string) => {
@@ -181,6 +223,7 @@ export default function Home() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--midnight)', position: 'relative', overflowX: 'hidden' }}>
+
       {/* Stars */}
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
         {STARS.map(star => (
@@ -195,52 +238,99 @@ export default function Home() {
             animation: `twinkle ${star.duration}s ${star.delay}s ease-in-out infinite`,
           }} />
         ))}
-        {/* Moon */}
         <div style={{
-          position: 'absolute',
-          top: '6%',
-          right: '8%',
-          width: 80,
-          height: 80,
-          borderRadius: '50%',
+          position: 'absolute', top: '6%', right: '8%',
+          width: 80, height: 80, borderRadius: '50%',
           background: 'radial-gradient(circle at 35% 35%, #f0e8c8, #c8b87a)',
-          boxShadow: '0 0 40px rgba(200, 184, 122, 0.4), 0 0 80px rgba(200, 184, 122, 0.15)',
+          boxShadow: '0 0 40px rgba(200,184,122,0.4), 0 0 80px rgba(200,184,122,0.15)',
           animation: 'float 6s ease-in-out infinite',
         }} />
-        {/* Nebula glow */}
         <div style={{
-          position: 'absolute',
-          bottom: '-10%',
-          left: '-10%',
-          width: '60%',
-          height: '60%',
-          borderRadius: '50%',
+          position: 'absolute', bottom: '-10%', left: '-10%',
+          width: '60%', height: '60%', borderRadius: '50%',
           background: 'radial-gradient(circle, rgba(30,37,69,0.6) 0%, transparent 70%)',
         }} />
       </div>
 
+      {/* Welcome modal */}
+      {showWelcome && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(5,6,15,0.85)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24,
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, rgba(14,16,40,0.98), rgba(20,24,55,0.98))',
+            border: '1px solid rgba(201,169,110,0.3)',
+            borderRadius: 24,
+            padding: '40px 32px',
+            maxWidth: 400,
+            textAlign: 'center',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 0 60px rgba(201,169,110,0.08)',
+            animation: 'slide-up 0.6s cubic-bezier(0.16,1,0.3,1) forwards',
+          }}>
+            <div style={{ fontSize: 52, marginBottom: 16, animation: 'float 4s ease-in-out infinite' }}>🌙</div>
+            <h2 style={{
+              fontFamily: "'Playfair Display', Georgia, serif",
+              fontSize: 26, fontWeight: 400,
+              color: 'var(--gold)', marginBottom: 16, lineHeight: 1.3,
+            }}>
+              Bienvenida, mi amor
+            </h2>
+            <p style={{
+              color: 'var(--star-blue)', fontSize: 16, lineHeight: 1.7,
+              fontStyle: 'italic', marginBottom: 12, fontWeight: 300,
+            }}>
+              Aquí encontrarás mi voz cada noche, lista para acompañarte mientras cierras los ojos.
+            </p>
+            <p style={{
+              color: 'var(--lavender)', fontSize: 14, lineHeight: 1.6,
+              marginBottom: 28, opacity: 0.8,
+            }}>
+              Escoge un cuento, ponte cómoda y deja que te lleve lejos... ✨
+            </p>
+            <button
+              onClick={() => setShowWelcome(false)}
+              style={{
+                background: 'linear-gradient(135deg, rgba(201,169,110,0.25), rgba(155,143,192,0.2))',
+                border: '1px solid rgba(201,169,110,0.5)',
+                color: 'var(--gold)',
+                padding: '13px 36px',
+                borderRadius: 50,
+                cursor: 'pointer',
+                fontFamily: "'Playfair Display', serif",
+                fontSize: 16,
+                letterSpacing: '0.05em',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(201,169,110,0.3)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(201,169,110,0.25), rgba(155,143,192,0.2))'; }}
+            >
+              Entrar 🌙
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main content */}
       <div style={{ position: 'relative', zIndex: 1, maxWidth: 680, margin: '0 auto', padding: '0 20px 160px' }}>
+
         {/* Header */}
         <header style={{ textAlign: 'center', paddingTop: 60, paddingBottom: 40 }}>
           <div style={{ fontSize: 40, marginBottom: 12, animation: 'float 5s ease-in-out infinite' }}>🌙</div>
           <h1 style={{
             fontFamily: "'Playfair Display', Georgia, serif",
-            fontSize: 'clamp(28px, 6vw, 42px)',
-            fontWeight: 400,
-            color: 'var(--moon-white)',
-            letterSpacing: '0.02em',
-            lineHeight: 1.2,
-            marginBottom: 10,
+            fontSize: 'clamp(28px, 6vw, 42px)', fontWeight: 400,
+            color: 'var(--moon-white)', letterSpacing: '0.02em',
+            lineHeight: 1.2, marginBottom: 10,
           }}>
             Cuentos de Medianoche
           </h1>
           <p style={{
-            color: 'var(--lavender)',
-            fontSize: 16,
-            fontStyle: 'italic',
-            fontWeight: 300,
-            opacity: 0.8,
+            color: 'var(--lavender)', fontSize: 16,
+            fontStyle: 'italic', fontWeight: 300, opacity: 0.8,
           }}>
             Historias para cerrar los ojos y soñar contigo
           </p>
@@ -251,12 +341,9 @@ export default function Home() {
           <div style={{
             background: 'rgba(30,37,69,0.8)',
             border: '1px solid rgba(155,143,192,0.3)',
-            borderRadius: 12,
-            padding: '12px 20px',
+            borderRadius: 12, padding: '12px 20px',
             marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             animation: 'fade-in 0.4s ease forwards',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -273,21 +360,15 @@ export default function Home() {
         )}
 
         {/* Upload button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
           <button
             onClick={() => setShowUpload(!showUpload)}
             style={{
               background: showUpload ? 'rgba(201,169,110,0.2)' : 'rgba(201,169,110,0.1)',
               border: '1px solid rgba(201,169,110,0.4)',
-              color: 'var(--gold)',
-              padding: '10px 20px',
-              borderRadius: 10,
-              cursor: 'pointer',
-              fontFamily: "'Crimson Pro', Georgia, serif",
-              fontSize: 15,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
+              color: 'var(--gold)', padding: '10px 20px', borderRadius: 10,
+              cursor: 'pointer', fontFamily: "'Crimson Pro', Georgia, serif",
+              fontSize: 15, display: 'flex', alignItems: 'center', gap: 8,
               transition: 'all 0.2s',
             }}
           >
@@ -301,9 +382,7 @@ export default function Home() {
           <div style={{
             background: 'rgba(14,16,32,0.9)',
             border: '1px solid rgba(155,143,192,0.25)',
-            borderRadius: 16,
-            padding: 28,
-            marginBottom: 28,
+            borderRadius: 16, padding: 28, marginBottom: 28,
             animation: 'slide-up 0.4s cubic-bezier(0.16,1,0.3,1) forwards',
             backdropFilter: 'blur(10px)',
           }}>
@@ -311,18 +390,14 @@ export default function Home() {
               ✨ Nuevo cuento
             </h3>
 
-            {/* Drop zone */}
             <div
               onClick={() => fileInputRef.current?.click()}
               style={{
                 border: `2px dashed ${selectedFile ? 'rgba(201,169,110,0.6)' : 'rgba(155,143,192,0.3)'}`,
-                borderRadius: 12,
-                padding: '32px 20px',
-                textAlign: 'center',
+                borderRadius: 12, padding: '32px 20px', textAlign: 'center',
                 cursor: 'pointer',
                 background: selectedFile ? 'rgba(201,169,110,0.05)' : 'rgba(20,24,48,0.4)',
-                transition: 'all 0.3s',
-                marginBottom: 16,
+                transition: 'all 0.3s', marginBottom: 16,
               }}
             >
               <div style={{ fontSize: 32, marginBottom: 8 }}>{selectedFile ? '🎵' : '📂'}</div>
@@ -337,7 +412,6 @@ export default function Home() {
             </div>
             <input ref={fileInputRef} type="file" accept="audio/mp3,audio/mpeg" style={{ display: 'none' }} onChange={handleFileSelect} />
 
-            {/* Title input */}
             {selectedFile && (
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', color: 'var(--lavender)', fontSize: 13, marginBottom: 6 }}>
@@ -351,27 +425,26 @@ export default function Home() {
                     width: '100%',
                     background: 'rgba(20,24,48,0.8)',
                     border: '1px solid rgba(155,143,192,0.3)',
-                    borderRadius: 8,
-                    padding: '10px 14px',
+                    borderRadius: 8, padding: '10px 14px',
                     color: 'var(--moon-white)',
                     fontFamily: "'Crimson Pro', serif",
-                    fontSize: 16,
-                    outline: 'none',
+                    fontSize: 16, outline: 'none',
                   }}
                 />
               </div>
             )}
 
-            {/* Upload progress */}
             {uploading && (
               <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--lavender)', fontSize: 13 }}>Subiendo a la nube...</span>
+                  <span style={{ color: 'var(--gold)', fontSize: 13 }}>{uploadProgress}%</span>
+                </div>
                 <div style={{ background: 'rgba(30,37,69,0.8)', borderRadius: 6, height: 6, overflow: 'hidden' }}>
                   <div style={{
-                    height: '100%',
-                    width: `${uploadProgress}%`,
+                    height: '100%', width: `${uploadProgress}%`,
                     background: 'linear-gradient(90deg, var(--lavender), var(--gold))',
-                    borderRadius: 6,
-                    transition: 'width 0.2s',
+                    borderRadius: 6, transition: 'width 0.3s',
                   }} />
                 </div>
               </div>
@@ -387,15 +460,11 @@ export default function Home() {
                   : 'rgba(30,37,69,0.4)',
                 border: `1px solid ${selectedFile ? 'rgba(201,169,110,0.5)' : 'rgba(155,143,192,0.15)'}`,
                 color: selectedFile && !uploading ? 'var(--gold)' : 'var(--lavender-dim)',
-                padding: '12px',
-                borderRadius: 10,
-                cursor: selectedFile && !uploading ? 'pointer' : 'not-allowed',
-                fontFamily: "'Crimson Pro', serif",
-                fontSize: 16,
-                transition: 'all 0.2s',
+                padding: '12px', borderRadius: 10, cursor: selectedFile && !uploading ? 'pointer' : 'not-allowed',
+                fontFamily: "'Crimson Pro', serif", fontSize: 16, transition: 'all 0.2s',
               }}
             >
-              {uploading ? 'Guardando...' : 'Guardar cuento'}
+              {uploading ? `Subiendo... ${uploadProgress}%` : '☁️ Guardar en la nube'}
             </button>
           </div>
         )}
@@ -417,11 +486,8 @@ export default function Home() {
                     ? 'linear-gradient(135deg, rgba(30,37,69,0.95), rgba(20,26,55,0.95))'
                     : 'rgba(14,16,32,0.7)',
                   border: `1px solid ${playing === story.id ? 'rgba(201,169,110,0.4)' : 'rgba(155,143,192,0.15)'}`,
-                  borderRadius: 14,
-                  padding: '18px 20px',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s',
-                  backdropFilter: 'blur(8px)',
+                  borderRadius: 14, padding: '18px 20px', cursor: 'pointer',
+                  transition: 'all 0.3s', backdropFilter: 'blur(8px)',
                   animation: `fade-in 0.5s ${i * 0.07}s ease both`,
                   boxShadow: playing === story.id ? '0 4px 30px rgba(201,169,110,0.1)' : 'none',
                 }}
@@ -431,41 +497,29 @@ export default function Home() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  {/* Play icon */}
                   <div style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: '50%',
+                    width: 44, height: 44, borderRadius: '50%',
                     background: playing === story.id
                       ? 'linear-gradient(135deg, rgba(201,169,110,0.4), rgba(155,143,192,0.3))'
                       : 'rgba(30,37,69,0.8)',
                     border: `1px solid ${playing === story.id ? 'rgba(201,169,110,0.5)' : 'rgba(155,143,192,0.2)'}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 16,
-                    flexShrink: 0,
-                    transition: 'all 0.2s',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 16, flexShrink: 0, transition: 'all 0.2s',
                   }}>
-                    {playing === story.id && !audioRef.current?.paused ? '⏸' : '▶'}
+                    {playing === story.id && !isPaused ? '⏸' : '▶'}
                   </div>
-
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{
-                      fontFamily: "'Playfair Display', serif",
-                      fontSize: 17,
+                      fontFamily: "'Playfair Display', serif", fontSize: 17,
                       color: playing === story.id ? 'var(--gold)' : 'var(--moon-white)',
                       marginBottom: 3,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       transition: 'color 0.2s',
                     }}>{story.title}</p>
                     <p style={{ color: 'var(--lavender-dim)', fontSize: 13 }}>
                       {story.duration ? formatDuration(story.duration) : '—'} · {formatDate(story.uploadedAt)}
                     </p>
                   </div>
-
                   <button
                     onClick={e => { e.stopPropagation(); deleteStory(story.id); }}
                     style={{
@@ -486,102 +540,63 @@ export default function Home() {
       {/* Player bar */}
       {playing && currentStory && (
         <div style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
+          position: 'fixed', bottom: 0, left: 0, right: 0,
           background: 'linear-gradient(180deg, rgba(10,11,20,0) 0%, rgba(10,11,20,0.98) 20%)',
           backdropFilter: 'blur(20px)',
           borderTop: '1px solid rgba(155,143,192,0.15)',
-          padding: '16px 20px 28px',
-          zIndex: 100,
+          padding: '16px 20px 28px', zIndex: 100,
           animation: 'slide-up 0.4s cubic-bezier(0.16,1,0.3,1) forwards',
         }}>
           <div style={{ maxWidth: 680, margin: '0 auto' }}>
-            {/* Story name */}
             <p style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: 15,
-              color: 'var(--gold)',
-              marginBottom: 10,
-              textAlign: 'center',
-              fontStyle: 'italic',
+              fontFamily: "'Playfair Display', serif", fontSize: 15,
+              color: 'var(--gold)', marginBottom: 10, textAlign: 'center', fontStyle: 'italic',
             }}>
               🌙 {currentStory.title}
             </p>
-
-            {/* Seek bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <span style={{ color: 'var(--lavender-dim)', fontSize: 12, width: 34, textAlign: 'right' }}>
                 {formatDuration(currentTime)}
               </span>
               <input
-                type="range"
-                min={0}
-                max={duration || 100}
-                value={currentTime}
+                type="range" min={0} max={duration || 100} value={currentTime}
                 onChange={seek}
                 style={{
-                  flex: 1,
-                  WebkitAppearance: 'none',
-                  height: 4,
-                  borderRadius: 2,
+                  flex: 1, WebkitAppearance: 'none', height: 4, borderRadius: 2,
                   background: `linear-gradient(90deg, var(--gold) ${(currentTime/(duration||1))*100}%, rgba(155,143,192,0.25) ${(currentTime/(duration||1))*100}%)`,
-                  outline: 'none',
-                  cursor: 'pointer',
+                  outline: 'none', cursor: 'pointer',
                 }}
               />
               <span style={{ color: 'var(--lavender-dim)', fontSize: 12, width: 34 }}>
                 {duration ? formatDuration(duration) : '--:--'}
               </span>
             </div>
-
-            {/* Controls */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              {/* Volume */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
                 <span style={{ fontSize: 14 }}>🔊</span>
                 <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={volume}
+                  type="range" min={0} max={1} step={0.05} value={volume}
                   onChange={handleVolumeChange}
                   style={{
-                    width: 70,
-                    WebkitAppearance: 'none',
-                    height: 3,
-                    borderRadius: 2,
+                    width: 70, WebkitAppearance: 'none', height: 3, borderRadius: 2,
                     background: `linear-gradient(90deg, var(--lavender) ${volume*100}%, rgba(155,143,192,0.25) ${volume*100}%)`,
-                    outline: 'none',
-                    cursor: 'pointer',
+                    outline: 'none', cursor: 'pointer',
                   }}
                 />
               </div>
-
-              {/* Play/Pause */}
               <button
                 onClick={togglePlay}
                 style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: '50%',
+                  width: 52, height: 52, borderRadius: '50%',
                   background: 'linear-gradient(135deg, rgba(201,169,110,0.3), rgba(155,143,192,0.25))',
                   border: '1px solid rgba(201,169,110,0.5)',
-                  color: 'var(--moon-white)',
-                  fontSize: 20,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  color: 'var(--moon-white)', fontSize: 20, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'all 0.2s',
                 }}
               >
-                {audioRef.current?.paused ? '▶' : '⏸'}
+                {isPaused ? '▶' : '⏸'}
               </button>
-
-              {/* Sleep timer */}
               <div style={{ display: 'flex', gap: 6, flex: 1, justifyContent: 'flex-end' }}>
                 {[15, 30, 60].map(min => (
                   <button
@@ -591,12 +606,8 @@ export default function Home() {
                       background: timer === min && timerLeft ? 'rgba(155,143,192,0.3)' : 'rgba(30,37,69,0.6)',
                       border: `1px solid ${timer === min && timerLeft ? 'rgba(155,143,192,0.5)' : 'rgba(155,143,192,0.2)'}`,
                       color: timer === min && timerLeft ? 'var(--lavender)' : 'var(--lavender-dim)',
-                      padding: '4px 8px',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      fontFamily: "'Crimson Pro', serif",
-                      transition: 'all 0.2s',
+                      padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
+                      fontSize: 11, fontFamily: "'Crimson Pro', serif", transition: 'all 0.2s',
                     }}
                   >
                     {min}min
