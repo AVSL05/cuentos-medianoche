@@ -52,3 +52,10 @@ html, body {
 
 .animate-fade-in { animation: fade-in 0.6s ease forwards; }
 .animate-slide-up { animation: slide-up 0.8s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+/* Hide volume on mobile — browser doesn't allow web volume control */
+@media (max-width: 600px) {
+  .volume-desktop {
+    display: none !important;
+  }
+}

@@ -540,7 +540,7 @@ export default function Home() {
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+              <div className="volume-desktop" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
                 <span style={{ fontSize: 14 }}>🔊</span>
                 <input
                   type="range" min={0} max={1} step={0.05} value={volume} onChange={handleVolumeChange}
