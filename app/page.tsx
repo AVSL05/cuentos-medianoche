@@ -157,7 +157,7 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
     setSelectedFile(file);
-    setNewTitle(file.name.replace(/\.mp3$/i, '').replace(/[-_]/g, ' '));
+    setNewTitle(file.name.replace(/\.(mp3|m4a|wav|ogg|aac)$/i, '').replace(/[-_]/g, ' '));
   };
 
   const handleUpload = async () => {
@@ -387,7 +387,7 @@ export default function Home() {
                 </p>
               )}
             </div>
-            <input ref={fileInputRef} type="file" accept="audio/mp3,audio/mpeg" style={{ display: 'none' }} onChange={handleFileSelect} />
+            <input ref={fileInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleFileSelect} />
 
             {selectedFile && (
               <div style={{ marginBottom: 16 }}>
