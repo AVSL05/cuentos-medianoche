@@ -464,7 +464,12 @@ export default function Home() {
           </p>
           {/* Switch role button */}
           {role && (
-            <button onClick={() => setShowRoleSelector(true)} style={{
+            <button onClick={() => {
+              localStorage.removeItem('welcome_seen');
+              localStorage.removeItem('user_role');
+              setRole(null);
+              setShowWelcome(true);
+            }} style={{
               marginTop: 12, background: 'none', border: 'none',
               color: 'var(--lavender-dim)', fontSize: 12, cursor: 'pointer',
               opacity: 0.5, letterSpacing: '0.1em', textTransform: 'uppercase',
