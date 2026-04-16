@@ -6,6 +6,7 @@ const CLOUD_NAME = 'dqknan2pq';
 const UPLOAD_PRESET = 'cuentos';
 const JSONBIN_ID = '69e14de1856a682189409469';
 const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
+const JSONBIN_KEY = '$2a$10$3xuj.14EBhW.V10.jlM/quRqDjbiS9mgiWqKypRIg1rQtVMH6oqOq';
 
 interface Story {
   id: string;
@@ -40,7 +41,10 @@ async function saveStoriesToCloud(stories: Story[]) {
   try {
     const res = await fetch(JSONBIN_URL, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_KEY,
+      },
       body: JSON.stringify({ stories }),
     });
     return res.ok;
@@ -52,7 +56,9 @@ async function saveStoriesToCloud(stories: Story[]) {
 // Load stories list from JSONBin
 async function loadStoriesFromCloud(): Promise<Story[]> {
   try {
-    const res = await fetch(`${JSONBIN_URL}/latest`);
+    const res = await fetch(`${JSONBIN_URL}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_KEY },
+    });
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data.record?.stories) ? data.record.stories : [];
