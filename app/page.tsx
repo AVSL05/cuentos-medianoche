@@ -525,12 +525,27 @@ export default function Home() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // File size check
     if (file.size > 100 * 1024 * 1024) {
       addToast('Archivo muy grande (máximo 100MB)', 'error');
       return;
     }
+
+    // Supported audio formats
+    const supportedFormats = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/webm', 'audio/x-m4a', 'audio/m4a'];
+    const fileName = file.name.toLowerCase();
+    const isAudioFile = supportedFormats.includes(file.type) ||
+                        /\.(mp3|m4a|wav|ogg|aac|webm)$/i.test(fileName);
+
+    if (!isAudioFile) {
+      addToast('Formato no soportado. Usa MP3, M4A, WAV, OGG, AAC o WebM', 'error');
+      return;
+    }
+
     setSelectedFile(file);
-    setNewTitle(file.name.replace(/\.(mp3|m4a|wav|ogg|aac)$/i, '').replace(/[-_]/g, ' '));
+    setNewTitle(file.name.replace(/\.(mp3|m4a|wav|ogg|aac|webm)$/i, '').replace(/[-_]/g, ' '));
+    addToast(`Archivo seleccionado: ${file.name}`, 'info');
   };
 
   const handleUpload = async () => {
@@ -540,9 +555,20 @@ export default function Home() {
     try {
       setUploadStep('Subiendo audio...');
       const formData = new FormData();
-      formData.append('file', selectedFile);
+
+      // Handle different file types
+      let fileToUpload = selectedFile;
+      let uploadResource = 'video';
+
+      // For WebM files, try to convert or use raw format
+      if (selectedFile.type === 'audio/webm' || selectedFile.name.endsWith('.webm')) {
+        // Keep WebM but try uploading as raw audio
+        uploadResource = 'raw';
+      }
+
+      formData.append('file', fileToUpload);
       formData.append('upload_preset', UPLOAD_PRESET);
-      formData.append('resource_type', 'video');
+      formData.append('resource_type', uploadResource);
       formData.append('folder', 'cuentos/audios');
 
       const xhr = new XMLHttpRequest();
@@ -551,18 +577,37 @@ export default function Home() {
       });
 
       const result = await new Promise<any>((resolve, reject) => {
-        xhr.onload = () => (xhr.status === 200 ? resolve(JSON.parse(xhr.responseText)) : reject());
-        xhr.onerror = reject;
-        xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`);
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            const errorData = JSON.parse(xhr.responseText);
+            reject(new Error(errorData.error?.message || 'Error en la carga'));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Error de conexión'));
+        xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${uploadResource}/upload`);
         xhr.send(formData);
       });
 
-      const audio = new Audio(result.secure_url);
-      const dur = await new Promise<number>((resolve) => {
-        audio.addEventListener('loadedmetadata', () => resolve(audio.duration));
-        audio.addEventListener('error', () => resolve(0));
-        setTimeout(() => resolve(result.duration || 0), 5000);
-      });
+      // Get duration from uploaded file
+      let dur = 0;
+      try {
+        const audio = new Audio(result.secure_url);
+        dur = await new Promise<number>((resolve) => {
+          const timeoutId = setTimeout(() => resolve(0), 3000);
+          audio.addEventListener('loadedmetadata', () => {
+            clearTimeout(timeoutId);
+            resolve(audio.duration);
+          });
+          audio.addEventListener('error', () => {
+            clearTimeout(timeoutId);
+            resolve(0);
+          });
+        });
+      } catch {
+        dur = 0;
+      }
 
       setUploadStep('Guardando en la nube...');
       setUploadProgress(90);
@@ -593,9 +638,11 @@ export default function Home() {
         setUploadStep('');
         if (fileInputRef.current) fileInputRef.current.value = '';
       }, 800);
-    } catch {
+    } catch (error: any) {
       setUploading(false);
-      addToast('Error al subir. Intenta de nuevo.', 'error');
+      const errorMsg = error?.message || 'Error desconocido al subir';
+      addToast(`Error al subir: ${errorMsg}. Intenta con otro formato.`, 'error');
+      console.error('Upload error:', error);
     }
   };
 
@@ -654,6 +701,17 @@ export default function Home() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingChunksRef.current = [];
+      setRecordingTime(0);
+      addToast('Grabación cancelada', 'info');
     }
   };
 
@@ -952,20 +1010,29 @@ export default function Home() {
                 <p style={{ color: 'var(--lavender)', fontSize: 18, marginBottom: 12, fontFamily: 'monospace' }}>
                   {formatDuration(recordingTime)}
                 </p>
-                <button onClick={stopRecording} style={{
-                  background: 'rgba(244, 67, 54, 0.2)', border: '1px solid rgba(244, 67, 54, 0.5)',
-                  color: 'rgba(255, 100, 100, 0.8)', padding: '10px 20px', borderRadius: 8,
-                  cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'all 0.2s',
-                }}>
-                  ⏹ Detener
-                </button>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                  <button onClick={stopRecording} style={{
+                    background: 'rgba(76, 175, 80, 0.2)', border: '1px solid rgba(76, 175, 80, 0.5)',
+                    color: 'rgba(76, 175, 80, 0.9)', padding: '10px 20px', borderRadius: 8,
+                    cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'all 0.2s',
+                  }}>
+                    ✓ Guardar
+                  </button>
+                  <button onClick={cancelRecording} style={{
+                    background: 'rgba(244, 67, 54, 0.2)', border: '1px solid rgba(244, 67, 54, 0.5)',
+                    color: 'rgba(255, 100, 100, 0.8)', padding: '10px 20px', borderRadius: 8,
+                    cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'all 0.2s',
+                  }}>
+                    ✕ Cancelar
+                  </button>
+                </div>
               </div>
             )}
 
             {/* File selection */}
-            <div onClick={() => fileInputRef.current?.click()} style={{
+            <div onClick={() => isRecording ? null : fileInputRef.current?.click()} style={{
               border: `2px dashed ${selectedFile ? 'rgba(201,169,110,0.6)' : 'rgba(155,143,192,0.3)'}`,
-              borderRadius: 12, padding: '32px 20px', textAlign: 'center', cursor: 'pointer',
+              borderRadius: 12, padding: '32px 20px', textAlign: 'center', cursor: isRecording ? 'not-allowed' : 'pointer',
               background: selectedFile ? 'rgba(201,169,110,0.05)' : 'rgba(20,24,48,0.4)',
               transition: 'all 0.3s', marginBottom: 16,
               opacity: isRecording ? 0.5 : 1,
@@ -975,9 +1042,16 @@ export default function Home() {
               <p style={{ color: selectedFile ? 'var(--gold)' : 'var(--lavender)', fontSize: 15 }}>
                 {selectedFile ? selectedFile.name : 'O toca para seleccionar un archivo'}
               </p>
-              <p style={{ color: 'var(--lavender-dim)', fontSize: 12, marginTop: 8 }}>
-                MP3, M4A, WAV, Voice Notes, o cualquier audio
-              </p>
+              {!selectedFile && (
+                <>
+                  <p style={{ color: 'var(--lavender-dim)', fontSize: 12, marginTop: 8 }}>
+                    MP3 • M4A • WAV • OGG • AAC • WebM
+                  </p>
+                  <p style={{ color: 'var(--lavender-dim)', fontSize: 11, marginTop: 4, fontStyle: 'italic' }}>
+                    Incluyendo Voice Notes de Apple (máx 100MB)
+                  </p>
+                </>
+              )}
               {selectedFile && (
                 <p style={{ color: 'var(--lavender-dim)', fontSize: 13, marginTop: 4 }}>
                   {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
@@ -988,9 +1062,23 @@ export default function Home() {
 
             {selectedFile && (
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', color: 'var(--lavender)', fontSize: 13, marginBottom: 6 }}>
-                  Título del cuento
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <label style={{ color: 'var(--lavender)', fontSize: 13 }}>
+                    Título del cuento
+                  </label>
+                  <button onClick={() => {
+                    setSelectedFile(null);
+                    setNewTitle('');
+                    setRecordingTime(0);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    addToast('Archivo cancelado', 'info');
+                  }} style={{
+                    background: 'none', border: 'none', color: 'rgba(244,67,54,0.7)',
+                    cursor: 'pointer', fontSize: 14, padding: 0, textDecoration: 'underline',
+                  }}>
+                    ✕ Limpiar
+                  </button>
+                </div>
                 <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
                   placeholder="Dale un nombre bonito..."
                   style={{
