@@ -727,34 +727,34 @@ export default function Home() {
           <p style={{ color: 'var(--lavender)', fontSize: 16, fontStyle: 'italic', fontWeight: 300, opacity: 0.8 }}>
             Historias para cerrar los ojos y soñar contigo
           </p>
-          {/* Switch role button */}
-          {role && (
-            <button onClick={() => {
-              localStorage.removeItem('welcome_seen');
-              localStorage.removeItem('user_role');
-              setRole(null);
-              setShowWelcome(true);
-            }} style={{
-              marginTop: 16, background: 'rgba(155,143,192,0.15)',
-              border: '1px solid rgba(155,143,192,0.4)',
-              color: 'var(--lavender)', fontSize: 'clamp(12px, 3vw, 14px)',
-              cursor: 'pointer',
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-              padding: '8px 16px', borderRadius: 8, transition: 'all 0.2s',
+          {/* Switch role button - Always visible */}
+          <button onClick={() => {
+            localStorage.removeItem('welcome_seen');
+            localStorage.removeItem('user_role');
+            setRole(null);
+            setShowWelcome(true);
+          }} style={{
+            marginTop: 16, background: 'rgba(155,143,192,0.15)',
+            border: '1px solid rgba(155,143,192,0.4)',
+            color: 'var(--lavender)', fontSize: 'clamp(12px, 3vw, 14px)',
+            cursor: 'pointer',
+            letterSpacing: '0.1em', textTransform: 'uppercase',
+            padding: '8px 16px', borderRadius: 8, transition: 'all 0.2s',
+            visibility: role ? 'visible' : 'hidden',
+            opacity: role ? 1 : 0,
+          }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(155,143,192,0.25)';
+              e.currentTarget.style.borderColor = 'rgba(155,143,192,0.6)';
             }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'rgba(155,143,192,0.25)';
-                e.currentTarget.style.borderColor = 'rgba(155,143,192,0.6)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'rgba(155,143,192,0.15)';
-                e.currentTarget.style.borderColor = 'rgba(155,143,192,0.4)';
-              }}
-              aria-label="Cambiar rol"
-            >
-              {role === 'luna' ? '🌙 Cambiar a El Sol' : '☀️ Cambiar a La Luna'}
-            </button>
-          )}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(155,143,192,0.15)';
+              e.currentTarget.style.borderColor = 'rgba(155,143,192,0.4)';
+            }}
+            aria-label="Cambiar rol"
+          >
+            {role === 'luna' ? '🌙 Cambiar a El Sol' : '☀️ Cambiar a La Luna'}
+          </button>
         </header>
 
         {/* Sleep timer bar */}
