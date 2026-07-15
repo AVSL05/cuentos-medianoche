@@ -475,35 +475,30 @@ export default function Home() {
     audio.crossOrigin = 'anonymous';
     audioRef.current = audio;
 
+    let hasError = false;
     let loadTimeout: any = null;
 
     audio.onerror = (error: any) => {
       console.error('Audio error:', error, audio.error?.code);
+      hasError = true;
       if (loadTimeout) clearTimeout(loadTimeout);
-      const errorCode = audio.error?.code;
-      let errorMsg = 'Formato no soportado';
-      if (errorCode === 2) errorMsg = 'Error de red';
-      if (errorCode === 3) errorMsg = 'Error al cargar';
-      if (errorCode === 4) errorMsg = 'Formato no soportado';
-      addToast(`Error al reproducir: ${errorMsg}`, 'error');
     };
 
     audio.oncanplay = () => {
       if (loadTimeout) clearTimeout(loadTimeout);
+      hasError = false;
       audio.play().catch((err) => {
         console.error('Play error:', err);
-        addToast(`Error: ${err.message}`, 'error');
       });
     };
 
-    // Timeout if audio doesn't load after 5 seconds
+    // Only show error if it truly fails after timeout
     loadTimeout = setTimeout(() => {
-      if (audio.readyState < 2) {
-        addToast('El audio tarda mucho en cargar. Intenta de nuevo.', 'error');
-        audio.pause();
+      if (hasError && audio.readyState < 2) {
+        addToast('El audio no se puede reproducir. Intenta de nuevo.', 'error');
         setPlaying(null);
       }
-    }, 5000);
+    }, 4000);
 
     setPlaying(story.id);
     setIsPaused(false);
