@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 
 const CLOUD_NAME = 'dqknan2pq';
 const UPLOAD_PRESET = 'cuentos';
@@ -24,6 +24,11 @@ interface Toast {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info';
+}
+
+interface DeleteConfirmation {
+  storyId: string;
+  storyTitle: string;
 }
 
 const STARS = Array.from({ length: 80 }, (_, i) => ({
@@ -265,15 +270,17 @@ function StoryCard({
   onDelete,
   onToggleFavorite,
   index,
+  onDeleteConfirm,
 }: {
   story: Story;
   isPlaying: boolean;
   isPaused: boolean;
   isSol: boolean;
   onPlay: (story: Story) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void> | void;
   onToggleFavorite: (id: string) => void;
   index: number;
+  onDeleteConfirm?: (storyId: string, storyTitle: string) => void;
 }) {
   return (
     <div
@@ -337,16 +344,20 @@ function StoryCard({
       </button>
       {isSol && (
         <button
-          onClick={(e) => {
+          onClick={(e: any) => {
             e.stopPropagation();
-            onDelete(story.id);
+            if (onDeleteConfirm) {
+              onDeleteConfirm(story.id, story.title);
+            } else {
+              onDelete(story.id);
+            }
           }}
           style={{
             background: 'none', border: 'none', color: 'rgba(155,143,192,0.4)',
             cursor: 'pointer', fontSize: 18, padding: 4, flexShrink: 0, transition: 'color 0.2s',
           }}
-          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,100,100,0.7)')}
-          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(155,143,192,0.4)')}
+          onMouseEnter={(e: any) => (e.currentTarget.style.color = 'rgba(255,100,100,0.7)')}
+          onMouseLeave={(e: any) => (e.currentTarget.style.color = 'rgba(155,143,192,0.4)')}
           aria-label="Eliminar cuento"
         >
           ×
@@ -379,10 +390,16 @@ export default function Home() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmation | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -595,7 +612,49 @@ export default function Home() {
       next.delete(id);
       return next;
     });
+    setDeleteConfirm(null);
     addToast('Cuento eliminado', 'info');
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      recordingChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        recordingChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
+        const audioFile = new File([audioBlob], `grabación-${Date.now()}.webm`, { type: 'audio/webm' });
+        setSelectedFile(audioFile);
+        setNewTitle(`Grabación ${new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`);
+        addToast('Grabación completada ✓', 'success');
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      addToast('Grabando... 🎤', 'info');
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime((t: number) => t + 1);
+      }, 1000);
+    } catch {
+      addToast('Error: No se puede acceder al micrófono', 'error');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    }
   };
 
   const toggleFavorite = (id: string) => {
@@ -701,6 +760,58 @@ export default function Home() {
 
       {/* Role selector */}
       {showRoleSelector && <RoleSelector onSelect={handleRoleSelect} />}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 400,
+          background: 'rgba(5,6,15,0.85)', backdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, rgba(14,16,40,0.98), rgba(20,24,55,0.98))',
+            border: '1px solid rgba(244,67,54,0.3)', borderRadius: 24,
+            padding: '40px 32px', maxWidth: 400, textAlign: 'center',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 0 60px rgba(244,67,54,0.08)',
+            animation: 'slide-up 0.3s ease forwards',
+          }}>
+            <div style={{ fontSize: 44, marginBottom: 20 }}>⚠️</div>
+            <h3 style={{
+              fontFamily: "'Playfair Display', serif",
+              fontSize: 22, fontWeight: 400, color: 'var(--moon-white)', marginBottom: 12,
+            }}>¿Eliminar cuento?</h3>
+            <p style={{
+              color: 'var(--lavender)', fontSize: 15, marginBottom: 28, lineHeight: 1.6,
+            }}>
+              Se eliminará permanentemente:<br/>
+              <strong style={{ color: 'var(--gold)' }}>"{deleteConfirm.storyTitle}"</strong>
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button onClick={() => setDeleteConfirm(null)} style={{
+                flex: 1, background: 'rgba(155,143,192,0.15)', border: '1px solid rgba(155,143,192,0.3)',
+                color: 'var(--lavender)', padding: '12px', borderRadius: 10, cursor: 'pointer',
+                fontSize: 15, transition: 'all 0.2s',
+              }}>
+                Cancelar
+              </button>
+              <button onClick={() => deleteStory(deleteConfirm.storyId)} style={{
+                flex: 1, background: 'rgba(244,67,54,0.2)', border: '1px solid rgba(244,67,54,0.5)',
+                color: 'rgba(255,100,100,0.8)', padding: '12px', borderRadius: 10, cursor: 'pointer',
+                fontSize: 15, fontWeight: 600, transition: 'all 0.2s',
+              }}
+                onMouseEnter={(e: any) => {
+                  e.currentTarget.style.background = 'rgba(244,67,54,0.3)';
+                }}
+                onMouseLeave={(e: any) => {
+                  e.currentTarget.style.background = 'rgba(244,67,54,0.2)';
+                }}
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast notifications */}
       <div style={{
@@ -812,15 +923,60 @@ export default function Home() {
             <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, marginBottom: 20, color: 'var(--moon-white)' }}>
               ✨ Nuevo cuento
             </h3>
+
+            {/* Recording UI */}
+            {!isRecording && !selectedFile && (
+              <div style={{ marginBottom: 20, textAlign: 'center' }}>
+                <p style={{ color: 'var(--lavender)', fontSize: 14, marginBottom: 12 }}>O graba tu voz directamente:</p>
+                <button onClick={startRecording} style={{
+                  background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.15))',
+                  border: '1px solid rgba(76, 175, 80, 0.5)',
+                  color: 'rgba(76, 175, 80, 0.9)',
+                  padding: '12px 24px', borderRadius: 10, cursor: 'pointer',
+                  fontSize: 16, fontWeight: 600, transition: 'all 0.2s',
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                }}>
+                  🎤 Grabar
+                </button>
+              </div>
+            )}
+
+            {/* Recording in progress */}
+            {isRecording && (
+              <div style={{
+                background: 'rgba(76, 175, 80, 0.1)', border: '1px solid rgba(76, 175, 80, 0.4)',
+                borderRadius: 12, padding: '20px', marginBottom: 20, textAlign: 'center',
+              }}>
+                <div style={{ fontSize: 40, marginBottom: 12, animation: 'pulse 1.5s ease-in-out infinite' }}>🎤</div>
+                <p style={{ color: 'rgba(76, 175, 80, 0.9)', fontSize: 14, marginBottom: 8, fontWeight: 600 }}>Grabando...</p>
+                <p style={{ color: 'var(--lavender)', fontSize: 18, marginBottom: 12, fontFamily: 'monospace' }}>
+                  {formatDuration(recordingTime)}
+                </p>
+                <button onClick={stopRecording} style={{
+                  background: 'rgba(244, 67, 54, 0.2)', border: '1px solid rgba(244, 67, 54, 0.5)',
+                  color: 'rgba(255, 100, 100, 0.8)', padding: '10px 20px', borderRadius: 8,
+                  cursor: 'pointer', fontSize: 14, fontWeight: 600, transition: 'all 0.2s',
+                }}>
+                  ⏹ Detener
+                </button>
+              </div>
+            )}
+
+            {/* File selection */}
             <div onClick={() => fileInputRef.current?.click()} style={{
               border: `2px dashed ${selectedFile ? 'rgba(201,169,110,0.6)' : 'rgba(155,143,192,0.3)'}`,
               borderRadius: 12, padding: '32px 20px', textAlign: 'center', cursor: 'pointer',
               background: selectedFile ? 'rgba(201,169,110,0.05)' : 'rgba(20,24,48,0.4)',
               transition: 'all 0.3s', marginBottom: 16,
+              opacity: isRecording ? 0.5 : 1,
+              pointerEvents: isRecording ? 'none' : 'auto',
             }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>{selectedFile ? '🎵' : '📂'}</div>
               <p style={{ color: selectedFile ? 'var(--gold)' : 'var(--lavender)', fontSize: 15 }}>
-                {selectedFile ? selectedFile.name : 'Toca para seleccionar un archivo'}
+                {selectedFile ? selectedFile.name : 'O toca para seleccionar un archivo'}
+              </p>
+              <p style={{ color: 'var(--lavender-dim)', fontSize: 12, marginTop: 8 }}>
+                MP3, M4A, WAV, Voice Notes, o cualquier audio
               </p>
               {selectedFile && (
                 <p style={{ color: 'var(--lavender-dim)', fontSize: 13, marginTop: 4 }}>
@@ -942,6 +1098,7 @@ export default function Home() {
                 onDelete={deleteStory}
                 onToggleFavorite={toggleFavorite}
                 index={i}
+                onDeleteConfirm={(id, title) => setDeleteConfirm({ storyId: id, storyTitle: title })}
               />
             ))}
           </div>
