@@ -472,7 +472,17 @@ export default function Home() {
     const audio = new Audio(story.url);
     audio.volume = volume;
     audioRef.current = audio;
-    audio.play().catch(() => addToast('Error al reproducir audio', 'error'));
+
+    audio.onerror = (error: any) => {
+      console.error('Audio error:', error);
+      addToast(`Error al reproducir: ${audio.error?.message || 'Formato no soportado'}`, 'error');
+    };
+
+    audio.play().catch((err) => {
+      console.error('Play error:', err);
+      addToast(`Error al reproducir audio: ${err.message}`, 'error');
+    });
+
     setPlaying(story.id);
     setIsPaused(false);
     setCurrentTime(0);
