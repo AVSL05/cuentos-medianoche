@@ -478,6 +478,38 @@ export default function Home() {
     let hasError = false;
     let loadTimeout: any = null;
 
+    // Attach all listeners BEFORE playing
+    audio.addEventListener('timeupdate', () => setCurrentTime(audio.currentTime));
+
+    audio.addEventListener('loadedmetadata', () => {
+      if (audio.duration && audio.duration !== Infinity) {
+        setDuration(audio.duration);
+      }
+    });
+
+    audio.addEventListener('canplay', () => {
+      if (!audio.duration || audio.duration === Infinity) {
+        // Fallback: try to get duration from canplay event
+        setTimeout(() => {
+          if (audio.duration && audio.duration !== Infinity) {
+            setDuration(audio.duration);
+          }
+        }, 100);
+      }
+    });
+
+    audio.addEventListener('ended', () => {
+      setPlaying(null);
+      setIsPaused(false);
+      setCurrentTime(0);
+    });
+
+    audio.addEventListener('durationchange', () => {
+      if (audio.duration && audio.duration !== Infinity) {
+        setDuration(audio.duration);
+      }
+    });
+
     audio.onerror = (error: any) => {
       console.error('Audio error:', error, audio.error?.code);
       hasError = true;
@@ -503,13 +535,6 @@ export default function Home() {
     setPlaying(story.id);
     setIsPaused(false);
     setCurrentTime(0);
-    audio.addEventListener('timeupdate', () => setCurrentTime(audio.currentTime));
-    audio.addEventListener('loadedmetadata', () => setDuration(audio.duration));
-    audio.addEventListener('ended', () => {
-      setPlaying(null);
-      setIsPaused(false);
-      setCurrentTime(0);
-    });
   };
 
   const togglePlay = () => {
