@@ -47,7 +47,8 @@ function formatDuration(secs: number) {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' });
+  const date = new Date(iso);
+  return date.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 }
 
 async function saveStoriesToCloud(stories: Story[]) {
@@ -471,17 +472,38 @@ export default function Home() {
     }
     const audio = new Audio(story.url);
     audio.volume = volume;
+    audio.crossOrigin = 'anonymous';
     audioRef.current = audio;
 
+    let loadTimeout: any = null;
+
     audio.onerror = (error: any) => {
-      console.error('Audio error:', error);
-      addToast(`Error al reproducir: ${audio.error?.message || 'Formato no soportado'}`, 'error');
+      console.error('Audio error:', error, audio.error?.code);
+      if (loadTimeout) clearTimeout(loadTimeout);
+      const errorCode = audio.error?.code;
+      let errorMsg = 'Formato no soportado';
+      if (errorCode === 2) errorMsg = 'Error de red';
+      if (errorCode === 3) errorMsg = 'Error al cargar';
+      if (errorCode === 4) errorMsg = 'Formato no soportado';
+      addToast(`Error al reproducir: ${errorMsg}`, 'error');
     };
 
-    audio.play().catch((err) => {
-      console.error('Play error:', err);
-      addToast(`Error al reproducir audio: ${err.message}`, 'error');
-    });
+    audio.oncanplay = () => {
+      if (loadTimeout) clearTimeout(loadTimeout);
+      audio.play().catch((err) => {
+        console.error('Play error:', err);
+        addToast(`Error: ${err.message}`, 'error');
+      });
+    };
+
+    // Timeout if audio doesn't load after 5 seconds
+    loadTimeout = setTimeout(() => {
+      if (audio.readyState < 2) {
+        addToast('El audio tarda mucho en cargar. Intenta de nuevo.', 'error');
+        audio.pause();
+        setPlaying(null);
+      }
+    }, 5000);
 
     setPlaying(story.id);
     setIsPaused(false);
