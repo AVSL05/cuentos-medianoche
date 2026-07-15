@@ -49,13 +49,133 @@ html, body {
   0% { background-position: -200% center; }
   100% { background-position: 200% center; }
 }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
 
 .animate-fade-in { animation: fade-in 0.6s ease forwards; }
 .animate-slide-up { animation: slide-up 0.8s cubic-bezier(0.16,1,0.3,1) forwards; }
+.animate-pulse { animation: pulse 2s ease-in-out infinite; }
+.animate-bounce { animation: bounce 1s ease-in-out infinite; }
 
-/* Hide volume on mobile — browser doesn't allow web volume control */
+/* Enhanced input styling */
+input[type="range"] {
+  cursor: pointer;
+  -webkit-appearance: none;
+  width: 100%;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--gold);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(201, 169, 110, 0.5);
+  transition: all 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 16px rgba(201, 169, 110, 0.8);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--gold);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 8px rgba(201, 169, 110, 0.5);
+  transition: all 0.2s;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 16px rgba(201, 169, 110, 0.8);
+}
+
+input[type="text"],
+input[type="file"] {
+  transition: all 0.2s ease;
+}
+
+input[type="text"]:focus {
+  box-shadow: 0 0 12px rgba(155, 143, 192, 0.3);
+}
+
+/* Button hover states */
+button {
+  position: relative;
+  overflow: hidden;
+}
+
+button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  transform: translate(-50%, -50%);
+  transition: width 0.5s, height 0.5s;
+  pointer-events: none;
+}
+
+button:active::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Focus visible for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--lavender);
+  outline-offset: 2px;
+}
+
+/* Mobile optimizations */
 @media (max-width: 600px) {
   .volume-desktop {
     display: none !important;
+  }
+
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  input[type="text"] {
+    font-size: 16px;
+  }
+}
+
+/* Dark mode support (already dark by default, but future-proofing) */
+@media (prefers-color-scheme: dark) {
+  body {
+    color-scheme: dark;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

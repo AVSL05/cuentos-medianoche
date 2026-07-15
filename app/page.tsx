@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 
 const CLOUD_NAME = 'dqknan2pq';
 const UPLOAD_PRESET = 'cuentos';
@@ -17,6 +17,13 @@ interface Story {
   uploadedAt: string;
   url: string;
   publicId: string;
+  isFavorite?: boolean;
+}
+
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
 }
 
 const STARS = Array.from({ length: 80 }, (_, i) => ({
@@ -60,6 +67,47 @@ async function loadStoriesFromCloud(): Promise<Story[]> {
   } catch { return []; }
 }
 
+// ── Toast Notifications ────────────────────────────────────────────────────
+function Toast({ toast, onRemove }: { toast: Toast; onRemove: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onRemove, 4000);
+    return () => clearTimeout(timer);
+  }, [onRemove]);
+
+  const bgColor = {
+    success: 'rgba(76, 175, 80, 0.2)',
+    error: 'rgba(244, 67, 54, 0.2)',
+    info: 'rgba(33, 150, 243, 0.2)',
+  }[toast.type];
+
+  const borderColor = {
+    success: 'rgba(76, 175, 80, 0.5)',
+    error: 'rgba(244, 67, 54, 0.5)',
+    info: 'rgba(33, 150, 243, 0.5)',
+  }[toast.type];
+
+  const icon = { success: '✓', error: '✕', info: 'ℹ' }[toast.type];
+
+  return (
+    <div style={{
+      background: bgColor,
+      border: `1px solid ${borderColor}`,
+      color: 'var(--moon-white)',
+      padding: '12px 16px',
+      borderRadius: 8,
+      marginBottom: 8,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      animation: 'slide-up 0.3s ease',
+      fontSize: 14,
+    }}>
+      <span style={{ fontSize: 16 }}>{icon}</span>
+      <span>{toast.message}</span>
+    </div>
+  );
+}
+
 // ── Role Selector ──────────────────────────────────────────────────────────
 function RoleSelector({ onSelect }: { onSelect: (role: UserRole) => void }) {
   const [chosen, setChosen] = useState<UserRole>(null);
@@ -96,7 +144,7 @@ function RoleSelector({ onSelect }: { onSelect: (role: UserRole) => void }) {
               color: 'var(--moon-white)', marginBottom: 40, lineHeight: 1.3,
             }}>Elige tu lugar en el cielo</h2>
 
-            <div style={{ display: 'flex', gap: 24, justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: 24, justifyContent: 'center', flexWrap: 'wrap' }}>
               {/* Luna */}
               <button onClick={() => choose('luna')} style={{
                 background: 'linear-gradient(145deg, rgba(20,24,55,0.9), rgba(30,37,80,0.8))',
@@ -119,7 +167,7 @@ function RoleSelector({ onSelect }: { onSelect: (role: UserRole) => void }) {
                 <span style={{ fontSize: 52, animation: 'float 4s ease-in-out infinite' }}>🌙</span>
                 <div>
                   <p style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: 'var(--moon-white)', marginBottom: 4 }}>La Luna</p>
-                  <p style={{ color: 'var(--lavender)', fontSize: 13, fontStyle: 'italic', opacity: 0.8 }}>Ella</p>
+                  <p style={{ color: 'var(--lavender)', fontSize: 13, fontStyle: 'italic', opacity: 0.8 }}>Escucha</p>
                 </div>
               </button>
 
@@ -145,7 +193,7 @@ function RoleSelector({ onSelect }: { onSelect: (role: UserRole) => void }) {
                 <span style={{ fontSize: 52, animation: 'float 4s 0.5s ease-in-out infinite' }}>☀️</span>
                 <div>
                   <p style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: 'var(--moon-white)', marginBottom: 4 }}>El Sol</p>
-                  <p style={{ color: 'var(--gold)', fontSize: 13, fontStyle: 'italic', opacity: 0.8 }}>Él</p>
+                  <p style={{ color: 'var(--gold)', fontSize: 13, fontStyle: 'italic', opacity: 0.8 }}>Cuenta</p>
                 </div>
               </button>
             </div>
@@ -207,11 +255,113 @@ function RoleSelector({ onSelect }: { onSelect: (role: UserRole) => void }) {
   );
 }
 
+// ── Story Card Component ────────────────────────────────────────────────────
+function StoryCard({
+  story,
+  isPlaying,
+  isPaused,
+  isSol,
+  onPlay,
+  onDelete,
+  onToggleFavorite,
+  index,
+}: {
+  story: Story;
+  isPlaying: boolean;
+  isPaused: boolean;
+  isSol: boolean;
+  onPlay: (story: Story) => void;
+  onDelete: (id: string) => void;
+  onToggleFavorite: (id: string) => void;
+  index: number;
+}) {
+  return (
+    <div
+      onClick={() => onPlay(story)}
+      style={{
+        background: isPlaying
+          ? 'linear-gradient(135deg, rgba(30,37,69,0.95), rgba(20,26,55,0.95))'
+          : 'rgba(14,16,32,0.7)',
+        border: `1px solid ${isPlaying ? 'rgba(201,169,110,0.4)' : 'rgba(155,143,192,0.15)'}`,
+        borderRadius: 14, padding: '18px 20px', cursor: 'pointer',
+        transition: 'all 0.3s', backdropFilter: 'blur(8px)',
+        animation: `fade-in 0.5s ${index * 0.07}s ease both`,
+        boxShadow: isPlaying ? '0 4px 30px rgba(201,169,110,0.1)' : 'none',
+        display: 'flex', alignItems: 'center', gap: 14,
+      }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPlay(story);
+        }
+      }}
+      aria-label={`${story.title}, ${story.duration ? formatDuration(story.duration) : 'duración desconocida'}`}
+    >
+      <div style={{
+        width: 44, height: 44, borderRadius: '50%',
+        background: isPlaying
+          ? 'linear-gradient(135deg, rgba(201,169,110,0.4), rgba(155,143,192,0.3))'
+          : 'rgba(30,37,69,0.8)',
+        border: `1px solid ${isPlaying ? 'rgba(201,169,110,0.5)' : 'rgba(155,143,192,0.2)'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 16, flexShrink: 0, transition: 'all 0.2s',
+      }}>
+        {isPlaying && !isPaused ? '⏸' : '▶'}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{
+          fontFamily: "'Playfair Display', serif", fontSize: 17,
+          color: isPlaying ? 'var(--gold)' : 'var(--moon-white)',
+          marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden',
+          textOverflow: 'ellipsis', transition: 'color 0.2s',
+        }}>{story.title}</p>
+        <p style={{ color: 'var(--lavender-dim)', fontSize: 13 }}>
+          {story.duration ? formatDuration(story.duration) : '—'} · {formatDate(story.uploadedAt)}
+        </p>
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite(story.id);
+        }}
+        style={{
+          background: 'none', border: 'none',
+          color: story.isFavorite ? 'rgba(201,169,110,0.8)' : 'rgba(155,143,192,0.3)',
+          cursor: 'pointer', fontSize: 18, padding: 4, flexShrink: 0, transition: 'all 0.2s',
+        }}
+        aria-label={story.isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+      >
+        ♥
+      </button>
+      {isSol && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(story.id);
+          }}
+          style={{
+            background: 'none', border: 'none', color: 'rgba(155,143,192,0.4)',
+            cursor: 'pointer', fontSize: 18, padding: 4, flexShrink: 0, transition: 'color 0.2s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,100,100,0.7)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(155,143,192,0.4)')}
+          aria-label="Eliminar cuento"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function Home() {
   const [role, setRole] = useState<UserRole>(null);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const [stories, setStories] = useState<Story[]>([]);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState(false);
@@ -227,17 +377,45 @@ export default function Home() {
   const [timer, setTimer] = useState<number | null>(null);
   const [timerLeft, setTimerLeft] = useState<number | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Load initial data
   useEffect(() => {
-    loadStoriesFromCloud().then(data => { setStories(data); setLoading(false); });
+    loadStoriesFromCloud().then(data => {
+      setStories(data);
+      setLoading(false);
+    });
     const seen = localStorage.getItem('welcome_seen');
-    if (!seen) { setShowWelcome(true); localStorage.setItem('welcome_seen', '1'); }
+    if (!seen) {
+      setShowWelcome(true);
+      localStorage.setItem('welcome_seen', '1');
+    }
     const savedRole = localStorage.getItem('user_role') as UserRole;
     if (savedRole) setRole(savedRole);
+
+    const savedFavorites = localStorage.getItem('favorites');
+    if (savedFavorites) {
+      setFavorites(new Set(JSON.parse(savedFavorites)));
+    }
+  }, []);
+
+  // Save favorites to localStorage
+  useEffect(() => {
+    localStorage.setItem('favorites', JSON.stringify(Array.from(favorites)));
+  }, [favorites]);
+
+  const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Math.random().toString();
+    setToasts(prev => [...prev, { id, message, type }]);
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
   const handleRoleSelect = (r: UserRole) => {
@@ -256,30 +434,49 @@ export default function Home() {
     if (timerLeft === null) return;
     if (timerLeft <= 0) {
       audioRef.current?.pause();
-      setPlaying(null); setIsPaused(false);
-      setTimerLeft(null); setTimer(null);
+      setPlaying(null);
+      setIsPaused(false);
+      setTimerLeft(null);
+      setTimer(null);
+      addToast('¡Descansa bien! 🌙', 'success');
       return;
     }
     timerRef.current = setTimeout(() => setTimerLeft(t => (t ?? 0) - 1), 1000);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [timerLeft]);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [timerLeft, addToast]);
 
   const playStory = (story: Story) => {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+    }
     const audio = new Audio(story.url);
     audio.volume = volume;
     audioRef.current = audio;
-    audio.play();
-    setPlaying(story.id); setIsPaused(false); setCurrentTime(0);
+    audio.play().catch(() => addToast('Error al reproducir audio', 'error'));
+    setPlaying(story.id);
+    setIsPaused(false);
+    setCurrentTime(0);
     audio.addEventListener('timeupdate', () => setCurrentTime(audio.currentTime));
     audio.addEventListener('loadedmetadata', () => setDuration(audio.duration));
-    audio.addEventListener('ended', () => { setPlaying(null); setIsPaused(false); setCurrentTime(0); });
+    audio.addEventListener('ended', () => {
+      setPlaying(null);
+      setIsPaused(false);
+      setCurrentTime(0);
+    });
   };
 
   const togglePlay = () => {
     if (!audioRef.current) return;
-    if (audioRef.current.paused) { audioRef.current.play(); setIsPaused(false); }
-    else { audioRef.current.pause(); setIsPaused(true); }
+    if (audioRef.current.paused) {
+      audioRef.current.play();
+      setIsPaused(false);
+    } else {
+      audioRef.current.pause();
+      setIsPaused(true);
+    }
   };
 
   const seek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -296,24 +493,33 @@ export default function Home() {
 
   const startSleepTimer = (minutes: number) => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    setTimer(minutes); setTimerLeft(minutes * 60);
+    setTimer(minutes);
+    setTimerLeft(minutes * 60);
+    addToast(`Dormiré en ${minutes} minutos 😴`, 'info');
   };
 
   const cancelTimer = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    setTimerLeft(null); setTimer(null);
+    setTimerLeft(null);
+    setTimer(null);
+    addToast('Timer cancelado', 'info');
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 100 * 1024 * 1024) {
+      addToast('Archivo muy grande (máximo 100MB)', 'error');
+      return;
+    }
     setSelectedFile(file);
     setNewTitle(file.name.replace(/\.(mp3|m4a|wav|ogg|aac)$/i, '').replace(/[-_]/g, ' '));
   };
 
   const handleUpload = async () => {
     if (!selectedFile) return;
-    setUploading(true); setUploadProgress(0);
+    setUploading(true);
+    setUploadProgress(0);
     try {
       setUploadStep('Subiendo audio...');
       const formData = new FormData();
@@ -328,7 +534,7 @@ export default function Home() {
       });
 
       const result = await new Promise<any>((resolve, reject) => {
-        xhr.onload = () => xhr.status === 200 ? resolve(JSON.parse(xhr.responseText)) : reject();
+        xhr.onload = () => (xhr.status === 200 ? resolve(JSON.parse(xhr.responseText)) : reject());
         xhr.onerror = reject;
         xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`);
         xhr.send(formData);
@@ -341,7 +547,8 @@ export default function Home() {
         setTimeout(() => resolve(result.duration || 0), 5000);
       });
 
-      setUploadStep('Guardando en la nube...'); setUploadProgress(90);
+      setUploadStep('Guardando en la nube...');
+      setUploadProgress(90);
 
       const newStory: Story = {
         id: result.public_id,
@@ -350,31 +557,79 @@ export default function Home() {
         uploadedAt: new Date().toISOString(),
         url: result.secure_url,
         publicId: result.public_id,
+        isFavorite: false,
       };
 
       const updated = [newStory, ...stories];
       await saveStoriesToCloud(updated);
       setStories(updated);
-      setUploadProgress(100); setUploadStep('¡Listo!');
+      setUploadProgress(100);
+      setUploadStep('¡Listo!');
+      addToast(`"${newTitle}" subido exitosamente! 🎉`, 'success');
 
       setTimeout(() => {
-        setUploading(false); setShowUpload(false);
-        setSelectedFile(null); setNewTitle('');
-        setUploadProgress(0); setUploadStep('');
+        setUploading(false);
+        setShowUpload(false);
+        setSelectedFile(null);
+        setNewTitle('');
+        setUploadProgress(0);
+        setUploadStep('');
         if (fileInputRef.current) fileInputRef.current.value = '';
       }, 800);
     } catch {
       setUploading(false);
-      alert('Hubo un error. Intenta de nuevo.');
+      addToast('Error al subir. Intenta de nuevo.', 'error');
     }
   };
 
   const deleteStory = async (id: string) => {
-    if (playing === id) { audioRef.current?.pause(); setPlaying(null); }
+    if (playing === id) {
+      audioRef.current?.pause();
+      setPlaying(null);
+    }
     const updated = stories.filter(s => s.id !== id);
     setStories(updated);
     await saveStoriesToCloud(updated);
+    setFavorites(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    addToast('Cuento eliminado', 'info');
   };
+
+  const toggleFavorite = (id: string) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    setStories(prev =>
+      prev.map(s =>
+        s.id === id ? { ...s, isFavorite: !s.isFavorite } : s
+      )
+    );
+  };
+
+  // Filter and sort stories
+  const filteredStories = useMemo(() => {
+    let filtered = stories.map(s => ({ ...s, isFavorite: favorites.has(s.id) }));
+
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(s =>
+        s.title.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    return filtered.sort((a, b) => {
+      if (a.isFavorite !== b.isFavorite) return b.isFavorite ? 1 : -1;
+      return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
+    });
+  }, [stories, searchQuery, favorites]);
 
   const currentStory = stories.find(s => s.id === playing);
   const isSol = role === 'sol';
@@ -447,6 +702,16 @@ export default function Home() {
       {/* Role selector */}
       {showRoleSelector && <RoleSelector onSelect={handleRoleSelect} />}
 
+      {/* Toast notifications */}
+      <div style={{
+        position: 'fixed', top: 20, right: 20, zIndex: 1000,
+        maxWidth: 400, pointerEvents: 'auto',
+      }}>
+        {toasts.map(toast => (
+          <Toast key={toast.id} toast={toast} onRemove={() => removeToast(toast.id)} />
+        ))}
+      </div>
+
       {/* Main content */}
       <div style={{ position: 'relative', zIndex: 1, maxWidth: 680, margin: '0 auto', padding: '0 20px 160px' }}>
 
@@ -477,14 +742,16 @@ export default function Home() {
               letterSpacing: '0.1em', textTransform: 'uppercase',
               padding: '8px 16px', borderRadius: 8, transition: 'all 0.2s',
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'rgba(155,143,192,0.25)';
-              e.currentTarget.style.borderColor = 'rgba(155,143,192,0.6)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'rgba(155,143,192,0.15)';
-              e.currentTarget.style.borderColor = 'rgba(155,143,192,0.4)';
-            }}>
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(155,143,192,0.25)';
+                e.currentTarget.style.borderColor = 'rgba(155,143,192,0.6)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(155,143,192,0.15)';
+                e.currentTarget.style.borderColor = 'rgba(155,143,192,0.4)';
+              }}
+              aria-label="Cambiar rol"
+            >
               {role === 'luna' ? '🌙 Cambiar a El Sol' : '☀️ Cambiar a La Luna'}
             </button>
           )}
@@ -507,7 +774,14 @@ export default function Home() {
             <button onClick={cancelTimer} style={{
               background: 'none', color: 'var(--gold)', cursor: 'pointer', fontSize: 13,
               padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(201,169,110,0.3)',
-            }}>Cancelar</button>
+              transition: 'all 0.2s',
+            }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(201,169,110,0.2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              aria-label="Cancelar temporizador"
+            >
+              Cancelar
+            </button>
           </div>
         )}
 
@@ -605,6 +879,38 @@ export default function Home() {
           </div>
         )}
 
+        {/* Search bar */}
+        {!loading && stories.length > 3 && (
+          <div style={{ marginBottom: 24 }}>
+            <input
+              type="text"
+              placeholder="Buscar cuento..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'rgba(20,24,48,0.6)',
+                border: '1px solid rgba(155,143,192,0.3)',
+                borderRadius: 10,
+                padding: '10px 16px',
+                color: 'var(--moon-white)',
+                fontFamily: "'Crimson Pro', serif",
+                fontSize: 15,
+                outline: 'none',
+                transition: 'all 0.2s',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.background = 'rgba(20,24,48,0.8)';
+                e.currentTarget.style.borderColor = 'rgba(155,143,192,0.5)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.background = 'rgba(20,24,48,0.6)';
+                e.currentTarget.style.borderColor = 'rgba(155,143,192,0.3)';
+              }}
+            />
+          </div>
+        )}
+
         {/* Story list */}
         {loading ? (
           <div style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -617,56 +923,26 @@ export default function Home() {
             <p style={{ fontStyle: 'italic', fontSize: 16 }}>Aún no hay cuentos...</p>
             <p style={{ fontSize: 14, marginTop: 6, opacity: 0.7 }}>Sube el primero y hazla soñar</p>
           </div>
+        ) : filteredStories.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--lavender-dim)' }}>
+            <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>🔍</div>
+            <p style={{ fontStyle: 'italic', fontSize: 16 }}>No se encontraron cuentos</p>
+            <p style={{ fontSize: 14, marginTop: 6, opacity: 0.7 }}>Intenta con otra búsqueda</p>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {stories.map((story, i) => (
-              <div key={story.id} style={{
-                background: playing === story.id
-                  ? 'linear-gradient(135deg, rgba(30,37,69,0.95), rgba(20,26,55,0.95))'
-                  : 'rgba(14,16,32,0.7)',
-                border: `1px solid ${playing === story.id ? 'rgba(201,169,110,0.4)' : 'rgba(155,143,192,0.15)'}`,
-                borderRadius: 14, padding: '18px 20px', cursor: 'pointer',
-                transition: 'all 0.3s', backdropFilter: 'blur(8px)',
-                animation: `fade-in 0.5s ${i * 0.07}s ease both`,
-                boxShadow: playing === story.id ? '0 4px 30px rgba(201,169,110,0.1)' : 'none',
-              }}
-                onClick={() => playing === story.id ? togglePlay() : playStory(story)}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{
-                    width: 44, height: 44, borderRadius: '50%',
-                    background: playing === story.id
-                      ? 'linear-gradient(135deg, rgba(201,169,110,0.4), rgba(155,143,192,0.3))'
-                      : 'rgba(30,37,69,0.8)',
-                    border: `1px solid ${playing === story.id ? 'rgba(201,169,110,0.5)' : 'rgba(155,143,192,0.2)'}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 16, flexShrink: 0, transition: 'all 0.2s',
-                  }}>
-                    {playing === story.id && !isPaused ? '⏸' : '▶'}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{
-                      fontFamily: "'Playfair Display', serif", fontSize: 17,
-                      color: playing === story.id ? 'var(--gold)' : 'var(--moon-white)',
-                      marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden',
-                      textOverflow: 'ellipsis', transition: 'color 0.2s',
-                    }}>{story.title}</p>
-                    <p style={{ color: 'var(--lavender-dim)', fontSize: 13 }}>
-                      {story.duration ? formatDuration(story.duration) : '—'} · {formatDate(story.uploadedAt)}
-                    </p>
-                  </div>
-                  {/* Delete — solo para El Sol */}
-                  {isSol && (
-                    <button onClick={e => { e.stopPropagation(); deleteStory(story.id); }} style={{
-                      background: 'none', border: 'none', color: 'rgba(155,143,192,0.4)',
-                      cursor: 'pointer', fontSize: 18, padding: 4, flexShrink: 0, transition: 'color 0.2s',
-                    }}
-                      onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,100,100,0.7)')}
-                      onMouseLeave={e => (e.currentTarget.style.color = 'rgba(155,143,192,0.4)')}
-                    >×</button>
-                  )}
-                </div>
-              </div>
+            {filteredStories.map((story, i) => (
+              <StoryCard
+                key={story.id}
+                story={story}
+                isPlaying={playing === story.id}
+                isPaused={isPaused}
+                isSol={isSol}
+                onPlay={playStory}
+                onDelete={deleteStory}
+                onToggleFavorite={toggleFavorite}
+                index={i}
+              />
             ))}
           </div>
         )}
@@ -693,9 +969,10 @@ export default function Home() {
               <input type="range" min={0} max={duration || 100} value={currentTime} onChange={seek}
                 style={{
                   flex: 1, WebkitAppearance: 'none', height: 4, borderRadius: 2,
-                  background: `linear-gradient(90deg, var(--gold) ${(currentTime/(duration||1))*100}%, rgba(155,143,192,0.25) ${(currentTime/(duration||1))*100}%)`,
+                  background: `linear-gradient(90deg, var(--gold) ${(currentTime / (duration || 1)) * 100}%, rgba(155,143,192,0.25) ${(currentTime / (duration || 1)) * 100}%)`,
                   outline: 'none', cursor: 'pointer',
                 }}
+                aria-label="Barra de progreso"
               />
               <span style={{ color: 'var(--lavender-dim)', fontSize: 12, width: 34 }}>
                 {duration ? formatDuration(duration) : '--:--'}
@@ -707,9 +984,10 @@ export default function Home() {
                 <input type="range" min={0} max={1} step={0.05} value={volume} onChange={handleVolumeChange}
                   style={{
                     width: 70, WebkitAppearance: 'none', height: 3, borderRadius: 2,
-                    background: `linear-gradient(90deg, var(--lavender) ${volume*100}%, rgba(155,143,192,0.25) ${volume*100}%)`,
+                    background: `linear-gradient(90deg, var(--lavender) ${volume * 100}%, rgba(155,143,192,0.25) ${volume * 100}%)`,
                     outline: 'none', cursor: 'pointer',
                   }}
+                  aria-label="Control de volumen"
                 />
               </div>
               <button onClick={togglePlay} style={{
@@ -718,11 +996,15 @@ export default function Home() {
                 border: '1px solid rgba(201,169,110,0.5)',
                 color: 'var(--moon-white)', fontSize: 20, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
-              }}>{isPaused ? '▶' : '⏸'}</button>
+              }}
+                onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.1)')}
+                onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+                aria-label={isPaused ? 'Reproducir' : 'Pausar'}
+              >{isPaused ? '▶' : '⏸'}</button>
               <div style={{ display: 'flex', gap: 6, flex: 1, justifyContent: 'flex-end' }}>
                 {[15, 30, 60].map(min => (
                   <button key={min}
-                    onClick={() => timer === min && timerLeft ? cancelTimer() : startSleepTimer(min)}
+                    onClick={() => (timer === min && timerLeft ? cancelTimer() : startSleepTimer(min))}
                     style={{
                       background: timer === min && timerLeft ? 'rgba(155,143,192,0.3)' : 'rgba(30,37,69,0.6)',
                       border: `1px solid ${timer === min && timerLeft ? 'rgba(155,143,192,0.5)' : 'rgba(155,143,192,0.2)'}`,
@@ -730,7 +1012,16 @@ export default function Home() {
                       padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
                       fontSize: 11, fontFamily: "'Crimson Pro', serif", transition: 'all 0.2s',
                     }}
-                  >{min}min</button>
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = 'rgba(155,143,192,0.4)';
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = timer === min && timerLeft ? 'rgba(155,143,192,0.5)' : 'rgba(155,143,192,0.2)';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
+                    aria-label={`Temporizador de ${min} minutos`}
+                  >{min}m</button>
                 ))}
               </div>
             </div>
