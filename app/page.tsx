@@ -676,7 +676,18 @@ export default function Home() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const options: any = {};
+
+      // Try WAV first (best compatibility), fallback to other formats
+      if (MediaRecorder.isTypeSupported('audio/wav')) {
+        options.mimeType = 'audio/wav';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        options.mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        options.mimeType = 'audio/mp4';
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       recordingChunksRef.current = [];
 
@@ -685,8 +696,10 @@ export default function Home() {
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
-        const audioFile = new File([audioBlob], `grabación-${Date.now()}.webm`, { type: 'audio/webm' });
+        const mimeType = options.mimeType || 'audio/wav';
+        const ext = mimeType.includes('wav') ? 'wav' : mimeType.includes('mp4') ? 'm4a' : 'webm';
+        const audioBlob = new Blob(recordingChunksRef.current, { type: mimeType });
+        const audioFile = new File([audioBlob], `grabación-${Date.now()}.${ext}`, { type: mimeType });
         setSelectedFile(audioFile);
         setNewTitle(`Grabación ${new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`);
         addToast('Grabación completada ✓', 'success');
